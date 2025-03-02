@@ -1038,6 +1038,7 @@ class Rocket:
         -------
         None
         """
+        #TODO: Account for the new fin_angle property when adding a Fins object
         try:
             for surface, position in zip(surfaces, positions):
                 self.__add_single_surface(surface, position)
@@ -1262,29 +1263,38 @@ class Rocket:
         Returns
         -------
         fin_set : TrapezoidalFins
-            Fin set object created.
+            List of Fin set object(s) created.
         """
 
         # Modify radius if not given, use rocket radius, otherwise use given.
         radius = radius if radius is not None else self.radius
+        
+        #the following will generate n fins placed equidistant around the rocket
+        
+        fin_set_collection = []
+        fin_angles = np.linspace(0, 360, n, endpoint=False)
+        for i, angle in enumerate(fin_angles):
+            
+            # Create a fin set as an object of TrapezoidalFins class
+            name += str(i) #To prevent having all fins named the same
+            fin_set = TrapezoidalFins(
+                angle, #fin_angle in degrees
+                root_chord,
+                tip_chord,
+                span,
+                radius,
+                cant_angle,
+                sweep_length,
+                sweep_angle,
+                airfoil,
+                name 
+                )
 
-        # Create a fin set as an object of TrapezoidalFins class
-        fin_set = TrapezoidalFins(
-            n,
-            root_chord,
-            tip_chord,
-            span,
-            radius,
-            cant_angle,
-            sweep_length,
-            sweep_angle,
-            airfoil,
-            name,
-        )
-
-        # Add fin set to the list of aerodynamic surfaces
-        self.add_surfaces(fin_set, position)
-        return fin_set
+            # Add fin set to the list of aerodynamic surfaces
+            self.add_surfaces(fin_set, position)
+            fin_set_collection.append(fin_set) #collect all objects for return
+            
+        return fin_set_collection
 
     def add_elliptical_fins(
         self,
@@ -1350,6 +1360,7 @@ class Rocket:
         fin_set : EllipticalFins
             Fin set object created.
         """
+        #TODO: Add code to account for new single fin calculations
         radius = radius if radius is not None else self.radius
         fin_set = EllipticalFins(n, root_chord, span, radius, cant_angle, airfoil, name)
         self.add_surfaces(fin_set, position)
@@ -1416,7 +1427,7 @@ class Rocket:
         fin_set : FreeFormFins
             Fin set object created.
         """
-
+        #TODO: Add code to account for adding in single fins, not set
         # Modify radius if not given, use rocket radius, otherwise use given.
         radius = radius if radius is not None else self.radius
 

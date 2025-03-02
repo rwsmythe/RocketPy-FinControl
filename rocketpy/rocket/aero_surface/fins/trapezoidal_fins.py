@@ -25,8 +25,10 @@ class TrapezoidalFins(Fins):
 
     Attributes
     ----------
-    TrapezoidalFins.n : int
-        Number of fins in fin set.
+#    TrapezoidalFins.n : int
+#        Number of fins in fin set.
+    TrapezoidalFins.fin_angle : float
+        Location of the fin about the rocket Z axis, in degrees
     TrapezoidalFins.rocket_radius : float
         The reference rocket radius used for lift coefficient normalization, in
         meters.
@@ -95,7 +97,7 @@ class TrapezoidalFins(Fins):
 
     def __init__(
         self,
-        n,
+        fin_angle,
         root_chord,
         tip_chord,
         span,
@@ -160,7 +162,7 @@ class TrapezoidalFins(Fins):
         """
 
         super().__init__(
-            n,
+            fin_angle,
             root_chord,
             span,
             rocket_radius,
@@ -374,7 +376,8 @@ class TrapezoidalFins(Fins):
     @classmethod
     def from_dict(cls, data):
         return cls(
-            n=data["n"],
+            #n=data["n"],
+            fin_angle=data["fin_angle"],
             root_chord=data["root_chord"],
             tip_chord=data["tip_chord"],
             span=data["span"],

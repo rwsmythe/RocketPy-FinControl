@@ -19,8 +19,8 @@ class Fins(AeroSurface):
 
     Attributes
     ----------
-    Fins.n : int
-        Number of fins in fin set.
+#    Fins.n : int
+#        Number of fins in fin set.
     Fins.rocket_radius : float
         The reference rocket radius used for lift coefficient normalization,
         in meters.
@@ -34,6 +34,10 @@ class Fins(AeroSurface):
         may be changed during a simulation. Useful for control systems.
     Fins.cant_angle_rad : float
         Fins cant angle with respect to the rocket centerline, in radians.
+    Fins.fin_angle: float
+        Fin angle about the rocket Z axis, positive in CCW direction with 0 on the rocket x axis
+    Fins.fin_angle_rad : float
+        Fins angle about the rocket Z axis, in radians.
     Fins.root_chord : float
         Fin root chord in meters.
     Fins.tip_chord : float
@@ -93,20 +97,23 @@ class Fins(AeroSurface):
 
     def __init__(
         self,
-        n,
+        #n,
+        fin_angle,
         root_chord,
         span,
         rocket_radius,
         cant_angle=0,
         airfoil=None,
-        name="Fins",
+        name="Fin", #each object in this collection should just be a singular fin
     ):
         """Initialize Fins class.
 
         Parameters
         ----------
-        n : int
-            Number of fins, must be larger than 2.
+#        n : int
+#            Number of fins, must be larger than 2.
+        fin_angle : float
+            Fin angle about the rocket Z axis in degrees
         root_chord : int, float
             Fin root chord in meters.
         span : int, float
@@ -144,7 +151,7 @@ class Fins(AeroSurface):
         super().__init__(name, ref_area, d)
 
         # Store values
-        self._n = n
+        self._fin_angle = fin_angle
         self._rocket_radius = rocket_radius
         self._airfoil = airfoil
         self._cant_angle = cant_angle
@@ -155,12 +162,20 @@ class Fins(AeroSurface):
         self.ref_area = ref_area  # Reference area
 
     @property
-    def n(self):
-        return self._n
+    def fin_angle(self):
+        return self._fin_angle
 
-    @n.setter
-    def n(self, value):
-        self._n = value
+#    @n.setter
+#    def n(self, value):
+#        self._n = value
+#        self.evaluate_geometrical_parameters()
+#        self.evaluate_center_of_pressure()
+#        self.evaluate_lift_coefficient()
+#        self.evaluate_roll_parameters()
+
+    @fin_angle.setter
+    def fin_angle(self, value):
+        self._fin_angle = value
         self.evaluate_geometrical_parameters()
         self.evaluate_center_of_pressure()
         self.evaluate_lift_coefficient()
@@ -285,20 +300,27 @@ class Fins(AeroSurface):
         )
 
         # Lift coefficient derivative for n fins corrected with Fin-Body interference
-        self.clalpha_multiple_fins = (
-            self.lift_interference_factor
-            * self.fin_num_correction(self.n)
-            * self.clalpha_single_fin
-        )  # Function of mach number
-        self.clalpha_multiple_fins.set_inputs("Mach")
-        self.clalpha_multiple_fins.set_outputs(
-            f"Lift coefficient derivative for {self.n:.0f} fins"
-        )
-        self.clalpha = self.clalpha_multiple_fins
+        #self.clalpha_multiple_fins = (
+        #    self.lift_interference_factor
+        #    * self.fin_num_correction(self.n)
+        #    * self.clalpha_single_fin
+        #)  # Function of mach number
+        
+        #TODO: Evaluate need for fin_num_correction as each fin will now be individually assessed for lift
+        #TODO: Evaluate for including the lift_interference_factor in clalpha
+        
+#        self.clalpha_multiple_fins.set_inputs("Mach")
+#        self.clalpha_multiple_fins.set_outputs(
+#            f"Lift coefficient derivative for {self.n:.0f} fins"
+#        )
+        self.clalpha = self.clalpha_single_fin
 
+        #TODO: Verify that clalpha_single_fin is sufficient, no need to reference multiple fins
+
+        #Changed clalpha_multiple_fins to clalpha_single_fin....should work
         # Cl = clalpha * alpha
         self.cl = Function(
-            lambda alpha, mach: alpha * self.clalpha_multiple_fins(mach),
+            lambda alpha, mach: alpha * self.clalpha_single_fin(mach),
             ["Alpha (rad)", "Mach"],
             "Lift coefficient",
         )
@@ -306,9 +328,8 @@ class Fins(AeroSurface):
         return self.cl
 
     def evaluate_roll_parameters(self):
-        """Calculates and returns the fin set's roll coefficients.
+        """Calculates and returns an individual fin's roll coefficients.
         The roll coefficients are saved in a list.
-
         Returns
         -------
         self.roll_parameters : list
@@ -316,22 +337,23 @@ class Fins(AeroSurface):
             roll moment damping coefficient and the cant angle in
             radians
         """
-
         self.cant_angle_rad = np.radians(self.cant_angle)
-
+        self.fin_angle_rad = np.radians(self.fin_angle) #as good a place as any to put this
+        
+        # For a single fin, self.n should be 1
+        # Removing the n factor as it's now implicitly 1
         clf_delta = (
             self.roll_forcing_interference_factor
-            * self.n
             * (self.Yma + self.rocket_radius)
             * self.clalpha_single_fin
             / self.d
         )  # Function of mach number
         clf_delta.set_inputs("Mach")
         clf_delta.set_outputs("Roll moment forcing coefficient derivative")
+        
         cld_omega = (
             2
             * self.roll_damping_interference_factor
-            * self.n
             * self.clalpha_single_fin
             * np.cos(self.cant_angle_rad)
             * self.roll_geometrical_constant
@@ -339,6 +361,7 @@ class Fins(AeroSurface):
         )  # Function of mach number
         cld_omega.set_inputs("Mach")
         cld_omega.set_outputs("Roll moment damping coefficient derivative")
+        
         self.roll_parameters = [clf_delta, cld_omega, self.cant_angle_rad]
         return self.roll_parameters
 
@@ -376,30 +399,26 @@ class Fins(AeroSurface):
         omega,
         *args,
     ):  # pylint: disable=arguments-differ
-        """Computes the forces and moments acting on the aerodynamic surface.
-
+        """Computes the forces and moments acting on an individual fin.
         Parameters
         ----------
         stream_velocity : tuple of float
             The velocity of the airflow relative to the surface.
         stream_speed : float
             The magnitude of the airflow speed.
-        stream_mach : float
-            The Mach number of the airflow.
         rho : float
             Air density.
         cp : Vector
             Center of pressure coordinates in the body frame.
         omega: tuple[float, float, float]
             Tuple containing angular velocities around the x, y, z axes.
-
         Returns
         -------
         tuple of float
             The aerodynamic forces (lift, side_force, drag) and moments
-            (pitch, yaw, roll) in the body frame.
+            (pitch, yaw, roll) in the body frame for this individual fin.
         """
-
+        # Get forces and moments from parent class calculation (non-roll effects)
         R1, R2, R3, M1, M2, _ = super().compute_forces_and_moments(
             stream_velocity,
             stream_speed,
@@ -407,28 +426,38 @@ class Fins(AeroSurface):
             rho,
             cp,
         )
+        
+        # Get this individual fin's roll parameters
         clf_delta, cld_omega, cant_angle_rad = self.roll_parameters
+        
+        # Calculate roll moment due to fin cant (forcing component)
         M3_forcing = (
             (1 / 2 * rho * stream_speed**2)
             * self.reference_area
             * self.reference_length
             * clf_delta.get_value_opt(stream_mach)
-            * cant_angle_rad
+            * cant_angle_rad  # Using this specific fin's cant angle
         )
+        
+        # Calculate roll damping moment for this individual fin
         M3_damping = (
             (1 / 2 * rho * stream_speed)
             * self.reference_area
             * (self.reference_length) ** 2
             * cld_omega.get_value_opt(stream_mach)
             * omega[2]
-            / 2
+            / 2  # Assuming this factor is already accounting for individual fin contribution
         )
+        
+        # Total roll moment for this fin
         M3 = M3_forcing - M3_damping
+        
         return R1, R2, R3, M1, M2, M3
 
     def to_dict(self, include_outputs=False):
         data = {
-            "n": self.n,
+#            "n": self.n,
+            "fin_angle": self.fin_angle,
             "root_chord": self.root_chord,
             "span": self.span,
             "rocket_radius": self.rocket_radius,

@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-
 import numpy as np
 
 
@@ -91,6 +90,9 @@ class AeroSurface(ABC):
         None
         """
 
+    #Added an additional transformation for the windstream from the body frame
+    #to the fin frame, then transforming the resultant force from the fin frame
+    #back to the body frame, so body moments can be calculated
     def compute_forces_and_moments(
         self,
         stream_velocity,
@@ -103,7 +105,6 @@ class AeroSurface(ABC):
         """Computes the forces and moments acting on the aerodynamic surface.
         Used in each time step of the simulation. This method is valid for
         the barrowman aerodynamic models.
-
         Parameters
         ----------
         stream_velocity : tuple
@@ -118,9 +119,6 @@ class AeroSurface(ABC):
             Center of pressure coordinates in the body frame.
         args : tuple
             Additional arguments.
-        kwargs : dict
-            Additional keyword arguments.
-
         Returns
         -------
         tuple of float
@@ -129,21 +127,67 @@ class AeroSurface(ABC):
         """
         R1, R2, R3, M1, M2, M3 = 0, 0, 0, 0, 0, 0
         cpz = cp[2]
+        
+        # Get original stream velocity components
         stream_vx, stream_vy, stream_vz = stream_velocity
-        if stream_vx**2 + stream_vy**2 != 0:  # TODO: maybe try/except
-            # Normalize component stream velocity in body frame
-            stream_vzn = stream_vz / stream_speed
-            if -1 * stream_vzn < 1:
-                attack_angle = np.arccos(-stream_vzn)
-                c_lift = self.cl.get_value_opt(attack_angle, stream_mach)
-                # Component lift force magnitude
-                lift = 0.5 * rho * (stream_speed**2) * self.reference_area * c_lift
-                # Component lift force components
-                lift_dir_norm = (stream_vx**2 + stream_vy**2) ** 0.5
-                lift_xb = lift * (stream_vx / lift_dir_norm)
-                lift_yb = lift * (stream_vy / lift_dir_norm)
-                # Total lift force
-                R1, R2, R3 = lift_xb, lift_yb, 0
-                # Total moment
-                M1, M2, M3 = -cpz * lift_yb, cpz * lift_xb, 0
+        
+        #if self is a fin, need to do an additional coordinate conversion
+        if type(self).__name__ == "TrapezoidalFins":
+            # Account for fin angular position around z-axis (in radians)
+            fin_angle_rad = self.fin_angle_rad  # Assuming this property exists or is added
+              
+            # Transform velocity components based on fin orientation
+            # Rotate velocity vector by negative fin angle to get components in fin's frame
+            cos_angle = np.cos(-fin_angle_rad)
+            sin_angle = np.sin(-fin_angle_rad)
+            fin_stream_vx = stream_vx * cos_angle - stream_vy * sin_angle
+            fin_stream_vy = stream_vx * sin_angle + stream_vy * cos_angle
+            fin_stream_vz = stream_vz
+        
+            # TODO: Verify the fin_stream_velocity is not needed
+            # Use transformed velocity for angle of attack calculation
+            # fin_stream_velocity = (fin_stream_vx, fin_stream_vy, fin_stream_vz)
+        
+            if fin_stream_vx**2 + fin_stream_vy**2 != 0:  # TODO: maybe try/except
+            
+                # Normalize component stream velocity in fin frame
+                stream_vzn = fin_stream_vz / stream_speed
+                if -1 * stream_vzn < 1:
+                    attack_angle = np.arccos(-stream_vzn)
+                    c_lift = self.cl.get_value_opt(attack_angle, stream_mach)
+                    # Component lift force magnitude
+                    lift = 0.5 * rho * (stream_speed**2) * self.reference_area * c_lift
+                    
+                    # Component lift force components in fin frame
+                    lift_dir_norm = (fin_stream_vx**2 + fin_stream_vy**2) ** 0.5
+                    fin_lift_x = lift * (fin_stream_vx / lift_dir_norm)
+                    fin_lift_y = lift * (fin_stream_vy / lift_dir_norm)
+                
+                    # Transform lift force back to body frame
+                    R1 = fin_lift_x * cos_angle + fin_lift_y * sin_angle
+                    R2 = -fin_lift_x * sin_angle + fin_lift_y * cos_angle
+                    R3 = 0
+                
+                    # Calculate moments in body frame
+                    M1 = -cpz * R2
+                    M2 = cpz * R1
+                    M3 = 0  # Roll moment is handled in the fin subclass
+        else:
+            if stream_vx**2 + stream_vy**2 != 0:  # TODO: maybe try/except
+                # Normalize component stream velocity in body frame
+                stream_vzn = stream_vz / stream_speed
+                if -1 * stream_vzn < 1:
+                    attack_angle = np.arccos(-stream_vzn)
+                    c_lift = self.cl.get_value_opt(attack_angle, stream_mach)
+                    # Component lift force magnitude
+                    lift = 0.5 * rho * (stream_speed**2) * self.reference_area * c_lift
+                    # Component lift force components
+                    lift_dir_norm = (stream_vx**2 + stream_vy**2) ** 0.5
+                    lift_xb = lift * (stream_vx / lift_dir_norm)
+                    lift_yb = lift * (stream_vy / lift_dir_norm)
+                    # Total lift force
+                    R1, R2, R3 = lift_xb, lift_yb, 0
+                    # Total moment
+                    M1, M2, M3 = -cpz * lift_yb, cpz * lift_xb, 0
+                    
         return R1, R2, R3, M1, M2, M3
